@@ -13,7 +13,13 @@ sutse<-function(st, optimizer=c("LevenbergMarquardt", "MinPack", "BFGS")){
   freq<-frequency(st)
   start<-start(st)
   model<-rjdssf::model()
-
+  vs<-as.numeric(var(s))
+  vt<-as.numeric(var(t))
+  es<-sqrt(vs)
+  et<-sqrt(vt)
+  s<-s/es
+  t<-t/et
+  
   # create the components and add them to the model
   rjdssf::add(model, rjdssf::locallevel("l1", initial = 0))
   rjdssf::add(model, rjdssf::locallineartrend("lt1", levelVariance = 0, fixedLevelVariance = T))
@@ -50,13 +56,12 @@ sutse<-function(st, optimizer=c("LevenbergMarquardt", "MinPack", "BFGS")){
   cs<-p[13]
   cn<-p[14]
   names<-c("level", "slope", "seasonal", "noise")
-  
-  variable1<-data.frame(variance=c(factor*p[1],factor*p[3], factor*p[4], factor*p[5]), 
+  variable1<-data.frame(variance=c(factor*p[1]*vs,factor*p[3]*vs, factor*p[4]*vs, factor*p[5]*vs), 
                         row.names = names)
-  variable2<-data.frame(variance=c(factor*(p[1]*cl*cl+p[6]),
-                                   factor*(p[3]*csl*csl+p[8]),  
-                                   factor*(p[4]*cs*cs+p[9]),
-                                   factor*(p[5]*cn*cn+p[10])), 
+  variable2<-data.frame(variance=c(factor*vt*(p[1]*cl*cl+p[6]),
+                                   factor*vt*(p[3]*csl*csl+p[8]),  
+                                   factor*vt*(p[4]*cs*cs+p[9]),
+                                   factor*vt*(p[5]*cn*cn+p[10])), 
                         row.names = names)
 
   if (p[1]==0){
@@ -109,16 +114,16 @@ sutse<-function(st, optimizer=c("LevenbergMarquardt", "MinPack", "BFGS")){
   
   sm<-rjdssf::smoothedstates(rslt)
   decomposition1<-list(
-    series=s,
-    level=ts(sm[,1]+sm[,2], frequency = freq, start = start),
-    seas=ts(sm[,4], frequency = freq, start = start),
-    noise=ts(sm[,15], frequency = freq, start = start)
+    series=es*s,
+    level=es*ts(sm[,1]+sm[,2], frequency = freq, start = start),
+    seas=es*ts(sm[,4], frequency = freq, start = start),
+    noise=es*ts(sm[,15], frequency = freq, start = start)
   )
   decomposition2<-list(
-    series=t,
-    level=ts(sm[,1]*cl+sm[,2]*csl+sm[,16]+sm[,17], frequency = freq, start = start),
-    seas=ts(sm[,4]*cs+sm[,19], frequency = freq, start = start),
-    noise=ts(sm[,15]*cn+sm[,30], frequency = freq, start = start)
+    series=et*t,
+    level=et*ts(sm[,1]*cl+sm[,2]*csl+sm[,16]+sm[,17], frequency = freq, start = start),
+    seas=et*ts(sm[,4]*cs+sm[,19], frequency = freq, start = start),
+    noise=et*ts(sm[,15]*cn+sm[,30], frequency = freq, start = start)
   )
   e<-list(decomposition1=decomposition1,
           decomposition2=decomposition2)
@@ -142,7 +147,7 @@ plot.JD3SUTSE<-function(sutse){
   ts.plot(ts.union(d$series, d$series-d$seas, d$level), col=c("gray", "blue", "red"))
   ts.plot(ts.union(d$seas, d$noise), col=c("magenta", "green"))
   
-  par(las=0)
+  par(mfrow=c(1,1))
 }
 
 logLik.JD3SUTSE<-function(sutse){
@@ -163,6 +168,52 @@ print.JD3SUTSE<-function(sutse){
   cat("\n\nCorrelations between innovations of the two series\n")
   print(sutse$model$correlations)
 }
+
+# Usual BSM with time varying trading days
+sts<-function(s, seasonal="Trigonometric"){  # create the model
+  # create the components and add them to the model
+  freq<-frequency(s)
+  m<-rjdssf::model()
+  rjdssf::add(m, rjdssf::locallineartrend("ll"))
+  rjdssf::add(m, rjdssf::seasonal("s", freq, type=seasonal))
+  rjdssf::add(m, rjdssf::noise("n"))
+  eq<-rjdssf::equation("eq")
+  rjdssf::add(eq, "ll")
+  rjdssf::add(eq, "s")
+  rjdssf::add(eq, "n")
+  rjdssf::add(m, eq)
+  #estimate the model
+  rslt<-rjdssf::estimate(m, s, concentrated=T)
+
+  p<-result(rslt, "parameters")
+  factor<-result(rslt, "scalingfactor")
+  names<-c("level", "slope", "seasonal", "noise")
+  model<-data.frame(variance=c(factor*p[1],factor*p[2], factor*p[3], factor*p[4]), 
+                        row.names = names)
+  #results
+  ll<-result(rslt, "likelihood.ll")
+  ser<-result(rslt, "likelihood.ser")
+  res<-result(rslt, "likelihood.residuals")
+  
+  likelihood<-list(loglikelihood=ll, ser=ser, residuals=res)
+  
+  sm<-rjdssf::smoothedstates(rslt)
+  start<-start(s)
+  decomposition<-list(
+    series=s,
+    level=ts(sm[,1], frequency = freq, start = start),
+    seas=ts(sm[,3], frequency = freq, start = start),
+    noise=ts(sm[,14], frequency = freq, start = start)
+  )
+
+  return (structure(
+    list(model=model,
+         decomposition=decomposition,
+         likelihood=likelihood)
+    , class="JD3SUTSE"))
+}
+
+
 
 c1=153
 c2=c1+5
