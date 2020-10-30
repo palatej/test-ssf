@@ -2,7 +2,7 @@ library(rjdssf)
 load("./Data/retail.rda")
 a<-read.csv("./Data/abs1.csv")
 
-sutse<-function(st, optimizer=c("LevenbergMarquardt", "MinPack", "BFGS")){
+sutse<-function(st, optimizer=c("MinPack", "LevenbergMarquardt", "BFGS")){
   optimizer=match.arg(optimizer)
   if (! inherits(st, "ts") || ! inherits(st, "matrix"))  
     stop(st, " is not a ts matrix")
@@ -12,14 +12,16 @@ sutse<-function(st, optimizer=c("LevenbergMarquardt", "MinPack", "BFGS")){
   t<-st[,2]
   freq<-frequency(st)
   start<-start(st)
-  model<-rjdssf::model()
   vs<-as.numeric(var(s))
   vt<-as.numeric(var(t))
+#  vs<-1
+#  vt<-1
   es<-sqrt(vs)
   et<-sqrt(vt)
   s<-s/es
   t<-t/et
   
+  model<-rjdssf::model()
   # create the components and add them to the model
   rjdssf::add(model, rjdssf::locallevel("l1", initial = 0))
   rjdssf::add(model, rjdssf::locallineartrend("lt1", levelVariance = 0, fixedLevelVariance = T))
@@ -30,7 +32,7 @@ sutse<-function(st, optimizer=c("LevenbergMarquardt", "MinPack", "BFGS")){
   rjdssf::add(model, rjdssf::seasonal("s2", freq, type="Trigonometric"))
   rjdssf::add(model, rjdssf::noise("n2"))
   
-  # create the equation (fix the variance to 1)
+  # create the equation (fix the variance to 0)
   eq1<-rjdssf::equation("eq1")
   rjdssf::add(eq1, "l1")
   rjdssf::add(eq1, "lt1")
@@ -47,7 +49,7 @@ sutse<-function(st, optimizer=c("LevenbergMarquardt", "MinPack", "BFGS")){
   rjdssf::add(eq2, "n2")
   rjdssf::add(eq2, "n1", 0, F)
   rjdssf::add(model, eq2)
-  rslt<-rjdssf::estimate(model, cbind(s,t), marginal=F, initialization="SqrtDiffuse", optimizer="MinPack", concentrated=T, precision=1e-15)
+  rslt<-rjdssf::estimate(model, cbind(s,t), marginal=F, initialization="SqrtDiffuse", optimizer=optimizer, concentrated=T, precision=1e-15)
   
   p<-result(rslt, "parameters")
   factor<-result(rslt, "scalingfactor")
@@ -132,7 +134,8 @@ sutse<-function(st, optimizer=c("LevenbergMarquardt", "MinPack", "BFGS")){
     list(specification=specification,
          model=models,
          estimation=e,
-         likelihood=likelihood)
+         likelihood=likelihood,
+         internal=rslt)
   , class="JD3SUTSE"))
 }
 
